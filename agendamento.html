@@ -3,175 +3,164 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AgendaSync - Agendamento</title>
+<title>AgendaSync - Calendário</title>
+
+<!-- Google Fonts -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- FullCalendar CSS -->
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css" rel="stylesheet">
+
 <style>
 body { font-family:'Inter', sans-serif; background:#f5f5f5; margin:0; padding:0; }
-.container { max-width:1200px; margin:30px auto; padding:20px; background:#fff; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); display:flex; gap:20px; flex-wrap:wrap; }
-h1 { text-align:center; color:#ff6a00; width:100%; margin-bottom:20px; }
-.calendar, .sidebar { background:#f9f9f9; border-radius:12px; padding:15px; }
-.calendar { flex:2 1 600px; display:grid; grid-template-columns: repeat(7, 1fr); gap:5px; }
-.day { padding:10px; background:#eee; border-radius:8px; cursor:pointer; text-align:center; position:relative; }
-.day.indisponivel { background:#ccc; cursor:not-allowed; color:#999; }
-.day.confirmado { background:#4caf50; color:#fff; }
-.day.pendente { background:#ffeb3b; }
-.day.cancelado { background:#f44336; color:#fff; }
-.sidebar { flex:1 1 300px; height:max-content; }
-.sidebar h2 { text-align:center; color:#ff6a00; margin-bottom:10px; }
-.slot { padding:8px; margin:5px 0; border-radius:6px; cursor:pointer; background:#eee; transition:0.3s; }
-.slot:hover { background:#ffebcd; }
-.slot.indisponivel { background:#ccc; cursor:not-allowed; color:#999; }
-.legend { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
-.legend div { padding:5px 10px; border-radius:5px; color:#fff; font-weight:600; }
-.legend .confirmado { background:#4caf50; }
-.legend .pendente { background:#ffeb3b; color:#000; }
-.legend .cancelado { background:#f44336; }
+.container { max-width:1200px; margin:30px auto; padding:20px; background:#fff; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); }
+h1 { text-align:center; color:#ff6a00; margin-bottom:20px; }
+#calendar { max-width: 100%; margin:0 auto; }
+.modal {
+  display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5);
+  justify-content:center; align-items:center;
+}
+.modal-content {
+  background:#fff; padding:20px; border-radius:12px; max-width:400px; width:90%;
+}
+.modal input, .modal select { width:100%; padding:10px; margin:10px 0; border-radius:8px; border:1px solid #ccc; }
+.modal button { background:#ff6a00; color:#fff; padding:12px; width:100%; border:none; border-radius:10px; font-weight:600; cursor:pointer; }
+.modal button:hover { background:#ff8c33; }
 </style>
 </head>
 <body>
 
 <div class="container">
-<h1>AgendaSync - Agendamento</h1>
-
-<div class="calendar" id="calendar"></div>
-
-<div class="sidebar">
-<h2>Horários do Dia</h2>
-<div id="slots"></div>
-
-<h2>Detalhes do Serviço</h2>
-<div id="detalhes">Selecione um horário para ver o serviço</div>
-
-<div class="legend">
-  <div class="confirmado">Confirmado</div>
-  <div class="pendente">Pendente</div>
-  <div class="cancelado">Cancelado</div>
-</div>
+<h1>AgendaSync - Calendário</h1>
+<div id="calendar"></div>
 </div>
 
+<!-- Modal de Agendamento -->
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <h2 id="modalTitle">Agendar Serviço</h2>
+    <label>Serviço</label>
+    <select id="servicoSelect"></select>
+    <label>Cliente</label>
+    <input type="text" id="clienteInput" placeholder="Seu nome ou email">
+    <button id="salvarBtn">Agendar</button>
+  </div>
+</div>
+
+<!-- Firebase -->
 <script type="module" src="firebase.js"></script>
+
+<!-- FullCalendar JS -->
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.js"></script>
+
 <script type="module">
 import { auth, db } from './firebase.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { collection, getDocs, query, where, addDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { collection, getDocs, addDoc, query, where, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 let usuarioAtual;
-const calendarEl = document.getElementById('calendar');
-const slotsEl = document.getElementById('slots');
-const detalhesEl = document.getElementById('detalhes');
-
 let proprietarioConfig = null;
+let calendar;
+const proprietarioEmail = "proprietario@agenda.com"; // ajuste conforme
+const modal = document.getElementById('modal');
+const servicoSelect = document.getElementById('servicoSelect');
+const clienteInput = document.getElementById('clienteInput');
+const salvarBtn = document.getElementById('salvarBtn');
+let dataSelecionada = null;
+let servicoSelecionado = null;
 
+// Autenticação
 onAuthStateChanged(auth, async (user) => {
   if(!user){ alert('Faça login!'); window.location.href='index.html'; return; }
   usuarioAtual = user;
   await carregarConfiguracao();
-  await renderCalendar();
+  initCalendar();
 });
 
+// Carregar configuração do salão
 async function carregarConfiguracao(){
   const docRef = doc(db,'configuracao','salon');
   const docSnap = await getDoc(docRef);
   if(docSnap.exists()){
     proprietarioConfig = docSnap.data();
-  } else {
-    alert('Configuração do salão não encontrada!');
-  }
+    servicoSelect.innerHTML = '';
+    proprietarioConfig.servicos.forEach(s=> {
+      const option = document.createElement('option');
+      option.value = s.nome;
+      option.textContent = `${s.nome} (${s.duracao} min - R$${s.valor})`;
+      servicoSelect.appendChild(option);
+    });
+  } else { alert('Configuração do salão não encontrada!'); }
 }
 
-async function renderCalendar(){
-  calendarEl.innerHTML='';
-  const hoje = new Date();
-  const dias = 30;
-  for(let i=0;i<dias;i++){
-    const dia = new Date();
-    dia.setDate(hoje.getDate()+i);
-    const diaStr = dia.toISOString().split('T')[0];
-    const div = document.createElement('div');
-    div.classList.add('day');
-    div.dataset.dia = diaStr;
-    div.textContent = diaStr.split('-').reverse().join('/');
-    div.addEventListener('click',()=> renderSlots(diaStr));
-    calendarEl.appendChild(div);
-  }
-}
-
-async function renderSlots(diaStr){
-  slotsEl.innerHTML='';
-  detalhesEl.innerHTML='Selecione um horário para ver o serviço';
-  if(!proprietarioConfig) return;
-
-  // Horários gerados automaticamente
-  const horaInicio = proprietarioConfig.horaInicio.split(':');
-  const horaFim = proprietarioConfig.horaFim.split(':');
-  let horarios = [];
-  proprietarioConfig.servicos.forEach(servico=>{
-    let hora = parseInt(horaInicio[0]);
-    let minuto = parseInt(horaInicio[1]);
-    const fim = parseInt(horaFim[0]);
-    while(hora < fim){
-      let h = hora.toString().padStart(2,'0');
-      let m = minuto.toString().padStart(2,'0');
-      horarios.push({horario:`${h}:${m}`, servico:servico.nome, duracao:servico.duracao, valor:servico.valor});
-      minuto += servico.duracao;
-      if(minuto>=60){ hora+=Math.floor(minuto/60); minuto = minuto%60; }
+// Inicializar FullCalendar
+function initCalendar(){
+  const calendarEl = document.getElementById('calendar');
+  calendar = new FullCalendar.Calendar(calendarEl,{
+    initialView: 'dayGridMonth',
+    selectable:true,
+    headerToolbar: {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,timeGridDay'
+    },
+    events: fetchEvents,
+    dateClick: function(info){
+      dataSelecionada = info.dateStr;
+      if(!proprietarioConfig) return;
+      modal.style.display='flex';
+      servicoSelecionado = servicoSelect.value;
+      clienteInput.value = usuarioAtual.uid===proprietarioConfig.proprietario ? '' : usuarioAtual.email;
+    },
+    eventClick: function(info){
+      alert(`Serviço: ${info.event.extendedProps.servico}\nCliente: ${info.event.extendedProps.cliente}\nStatus: ${info.event.extendedProps.status}\nValor: ${info.event.extendedProps.valor}`);
     }
   });
-
-  const q = query(collection(db,'agendamentos'), where('data','==',diaStr));
-  const snapshot = await getDocs(q);
-  const ocupados = {};
-  snapshot.forEach(docu=>{ ocupados[docu.data().horario]=docu.data(); });
-
-  horarios.forEach(h=>{
-    const div = document.createElement('div');
-    div.classList.add('slot');
-    div.textContent = `${h.horario} - ${h.servico}`;
-
-    if(ocupados[h.horario]){
-      div.classList.add('indisponivel');
-      div.textContent += ` (${ocupados[h.horario].nomeCliente})`;
-    }
-
-    div.addEventListener('click', async ()=>{
-      if(div.classList.contains('indisponivel')) return;
-
-      if(usuarioAtual.uid === proprietarioConfig.proprietario){
-        const cliente = prompt('Nome do cliente:');
-        if(!cliente) return;
-        await addDoc(collection(db,'agendamentos'),{
-          nomeCliente:cliente,
-          servico:h.servico,
-          valor:h.valor,
-          data:diaStr,
-          horario:h.horario,
-          status:'pendente',
-          userId:'cliente_id_exemplo'
-        });
-        alert('Agendamento cadastrado pelo proprietário!');
-      } else {
-        await addDoc(collection(db,'agendamentos'),{
-          nomeCliente:usuarioAtual.email,
-          servico:h.servico,
-          valor:h.valor,
-          data:diaStr,
-          horario:h.horario,
-          status:'pendente',
-          userId:usuarioAtual.uid
-        });
-        alert('Agendamento realizado!');
-      }
-      await renderSlots(diaStr);
-    });
-
-    div.addEventListener('mouseenter', ()=>{
-      if(ocupados[h.horario]) detalhesEl.innerHTML=`Serviço: ${ocupados[h.horario].servico}<br>Cliente: ${ocupados[h.horario].nomeCliente}<br>Status: ${ocupados[h.horario].status}<br>Valor: ${ocupados[h.horario].valor || '-'}`;
-      else detalhesEl.innerHTML=`Serviço: ${h.servico} - Valor: ${h.valor}`;
-    });
-
-    slotsEl.appendChild(div);
-  });
+  calendar.render();
 }
+
+// Buscar agendamentos do Firebase
+async function fetchEvents(fetchInfo, successCallback, failureCallback){
+  try{
+    const q = query(collection(db,'agendamentos'), where('data','>=', fetchInfo.startStr));
+    const snapshot = await getDocs(q);
+    const events = [];
+    snapshot.forEach(docu=>{
+      const a = docu.data();
+      if(usuarioAtual.uid!==proprietarioConfig.proprietario && a.userId!==usuarioAtual.uid) return;
+      events.push({
+        title:`${a.servico} (${a.nomeCliente})`,
+        start:`${a.data}T${a.horario}:00`,
+        color: a.status==='confirmado'?'#4caf50':a.status==='pendente'?'#ffeb3b':'#f44336',
+        extendedProps:{servico:a.servico, cliente:a.nomeCliente, status:a.status, valor:a.valor}
+      });
+    });
+    successCallback(events);
+  } catch(e){ failureCallback(e); }
+}
+
+// Salvar agendamento
+salvarBtn.addEventListener('click', async ()=>{
+  if(!dataSelecionada) return;
+  const servico = servicoSelect.value;
+  const cliente = clienteInput.value || usuarioAtual.email;
+  const serv = proprietarioConfig.servicos.find(s=>s.nome===servico);
+  await addDoc(collection(db,'agendamentos'),{
+    nomeCliente: cliente,
+    servico: servico,
+    valor: serv.valor,
+    data: dataSelecionada,
+    horario: serv.horario || '08:00',
+    status:'pendente',
+    userId: usuarioAtual.uid
+  });
+  modal.style.display='none';
+  calendar.refetchEvents();
+  alert('Agendamento realizado!');
+});
+
+// Fechar modal ao clicar fora
+modal.addEventListener('click', e=>{ if(e.target===modal) modal.style.display='none'; });
 </script>
 
 </body>
