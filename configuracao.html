@@ -3,35 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AgendaSync - Configuração do Salão</title>
+<title>AgendaSync - Configuração Proprietário</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing:border-box; margin:0; padding:0; font-family:'Inter',sans-serif; }
-  body { min-height:100vh; display:flex; flex-direction:column; align-items:center; background:#f4f4f4; padding:20px; }
-  h1,h2 { color:#ff6a00; margin:20px 0; text-align:center; }
-  .form-card { background:#fff; padding:20px; border-radius:15px; box-shadow:0 5px 15px rgba(0,0,0,0.2); margin:10px; width:100%; max-width:500px; }
-  .form-group { margin-bottom:15px; display:flex; flex-direction:column; }
-  .form-group label { margin-bottom:5px; font-weight:600; }
-  .form-group input { padding:10px; border-radius:8px; border:1px solid #ddd; font-size:16px; }
-  .btn { padding:10px 20px; background:#ff6a00; color:#fff; border:none; border-radius:10px; margin:5px; cursor:pointer; }
-  .btn:hover { background:#ff8c33; }
-  #servicosList div { margin:5px 0; padding:5px; border:1px solid #ddd; border-radius:10px; }
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',sans-serif;}
+body{background:#f4f4f4;padding:20px;min-height:100vh;display:flex;flex-direction:column;align-items:center;}
+h1,h2,h3{text-align:center;color:#ff6a00;margin:15px 0;}
+.container{background:#fff;padding:20px;border-radius:15px;box-shadow:0 5px 15px rgba(0,0,0,0.2);width:100%;max-width:700px;margin:10px;}
+.form-group{margin-bottom:15px;display:flex;flex-direction:column;}
+.form-group label{margin-bottom:5px;font-weight:600;}
+.form-group input, .form-group select{padding:10px;border-radius:8px;border:1px solid #ddd;font-size:16px;}
+.btn{padding:10px 20px;background:#ff6a00;color:#fff;border:none;border-radius:10px;margin:5px;cursor:pointer;}
+.btn:hover{background:#ff8c33;}
+#servicosList div,#diasIndisponiveisList div,#agendamentosList div{margin:5px 0;padding:5px;border:1px solid #ddd;border-radius:10px;display:flex;justify-content:space-between;align-items:center;}
+.agendamentoItem button{margin-left:5px;padding:5px 10px;}
 </style>
 </head>
 <body>
 
-<h1>AgendaSync</h1>
-<div class="form-card">
-  <h2>Configuração do Salão</h2>
+<h1>AgendaSync - Configuração</h1>
+
+<div class="container">
+  <h2>Horário de Expediente</h2>
   <div class="form-group">
-    <label>Horário de Início</label>
+    <label>Horário Início</label>
     <input type="time" id="horaInicio">
   </div>
   <div class="form-group">
-    <label>Horário de Fim</label>
+    <label>Horário Fim</label>
     <input type="time" id="horaFim">
   </div>
+</div>
 
+<div class="container">
   <h2>Serviços</h2>
   <div class="form-group">
     <label>Nome do Serviço</label>
@@ -49,93 +53,132 @@
 
   <h3>Serviços Cadastrados</h3>
   <div id="servicosList"></div>
-
-  <button class="btn" id="salvarConfig">Salvar Configuração</button>
 </div>
+
+<div class="container">
+  <h2>Dias Indisponíveis</h2>
+  <input type="date" id="diaIndisponivel">
+  <button class="btn" id="adicionarDiaIndisponivel">Adicionar Dia Indisponível</button>
+  <div id="diasIndisponiveisList"></div>
+</div>
+
+<div class="container">
+  <h2>Agendamentos</h2>
+  <div id="agendamentosList"></div>
+</div>
+
+<button class="btn" id="salvarConfig">Salvar Configuração</button>
+<audio id="somNotificacao" src="notificacao.mp3" preload="auto"></audio>
 
 <script type="module" src="firebase.js"></script>
 <script type="module">
 import { auth, db } from './firebase.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 let usuarioAtual;
-let proprietarioConfig = { servicos: [] };
+let configSalao={servicos:[],diasIndisponiveis:[]};
+let agendamentos=[];
 
+function tocarSom(){document.getElementById('somNotificacao').play();}
+
+// Carregar usuário e configuração
 onAuthStateChanged(auth, async (user)=>{
-  if(!user){ window.location.href = "index.html"; return; }
-  usuarioAtual = user;
+  if(!user){ window.location.href="index.html"; return; }
+  usuarioAtual=user;
 
-  // Verifica role
-  const userSnap = await getDoc(doc(db,'usuarios',user.uid));
-  if(!userSnap.exists() || userSnap.data().role !== 'proprietario'){
-    alert("Acesso negado! Apenas proprietário pode acessar.");
-    window.location.href = "index.html";
-    return;
+  const userSnap=await getDoc(doc(db,'usuarios',user.uid));
+  if(!userSnap.exists() || userSnap.data().role!=='proprietario'){
+    alert("Acesso negado. Somente proprietário."); window.location.href="index.html"; return;
   }
 
-  // Carrega configuração existente
-  const configRef = doc(db,'configuracao','salon');
-  const configSnap = await getDoc(configRef);
-
+  // Carregar configuração
+  const configSnap=await getDoc(doc(db,'configuracao','salon'));
   if(configSnap.exists()){
-    proprietarioConfig = configSnap.data();
-    document.getElementById('horaInicio').value = proprietarioConfig.horaInicio || "08:00";
-    document.getElementById('horaFim').value = proprietarioConfig.horaFim || "18:00";
-    if(proprietarioConfig.servicos){
-      proprietarioConfig.servicos.forEach(s => adicionarServicoNaLista(s));
-    }
+    configSalao=configSnap.data();
+    document.getElementById('horaInicio').value=configSalao.horaInicio || "08:00";
+    document.getElementById('horaFim').value=configSalao.horaFim || "18:00";
+    if(configSalao.servicos) configSalao.servicos.forEach(s=>adicionarServicoNaLista(s));
+    if(configSalao.diasIndisponiveis) configSalao.diasIndisponiveis.forEach(d=>adicionarDiaIndisponivelNaLista(d));
   } else {
-    // Cria configuração mínima
-    proprietarioConfig = {
-      proprietario: usuarioAtual.uid,
-      horaInicio: "08:00",
-      horaFim: "18:00",
-      servicos: []
-    };
-    await setDoc(configRef, proprietarioConfig);
+    configSalao={proprietario:usuarioAtual.uid,horaInicio:"08:00",horaFim:"18:00",servicos:[],diasIndisponiveis:[]};
+    await setDoc(doc(db,'configuracao','salon'),configSalao);
   }
+
+  // Carregar agendamentos
+  await carregarAgendamentos();
 });
 
-// Adicionar serviço na lista da tela
+// Funções Serviços
 document.getElementById('adicionarServico').addEventListener('click', ()=>{
-  const nome = document.getElementById('servicoNome').value;
-  const duracao = parseInt(document.getElementById('servicoDuracao').value);
-  const valor = parseFloat(document.getElementById('servicoValor').value);
-
-  if(!nome || !duracao || !valor){ alert("Preencha todos os campos do serviço!"); return; }
-
-  const servico = { nome, duracao, valor };
-  proprietarioConfig.servicos.push(servico);
+  const nome=document.getElementById('servicoNome').value;
+  const duracao=parseInt(document.getElementById('servicoDuracao').value);
+  const valor=parseFloat(document.getElementById('servicoValor').value);
+  if(!nome||!duracao||!valor){ alert("Preencha todos os campos!"); return; }
+  const servico={nome,duracao,valor};
+  configSalao.servicos.push(servico);
   adicionarServicoNaLista(servico);
-
-  // Limpar campos
-  document.getElementById('servicoNome').value = "";
-  document.getElementById('servicoDuracao').value = 30;
-  document.getElementById('servicoValor').value = 50;
+  document.getElementById('servicoNome').value=""; document.getElementById('servicoDuracao').value=30; document.getElementById('servicoValor').value=50;
 });
 
 function adicionarServicoNaLista(servico){
-  const div = document.createElement('div');
-  div.textContent = `${servico.nome} - ${servico.duracao} min - R$ ${servico.valor.toFixed(2)}`;
+  const div=document.createElement('div');
+  div.textContent=`${servico.nome} - ${servico.duracao} min - R$ ${servico.valor.toFixed(2)}`;
+  div.dataset.nome=servico.nome;
+  const btnRemover=document.createElement('button'); btnRemover.textContent="Remover";
+  btnRemover.addEventListener('click',()=>{
+    configSalao.servicos=configSalao.servicos.filter(s=>s.nome!==servico.nome);
+    div.remove();
+  });
+  div.appendChild(btnRemover);
   document.getElementById('servicosList').appendChild(div);
 }
 
-// Salvar configuração no Firestore
+// Dias indisponíveis
+document.getElementById('adicionarDiaIndisponivel').addEventListener('click', ()=>{
+  const dia=document.getElementById('diaIndisponivel').value;
+  if(!dia){ alert("Selecione um dia!"); return; }
+  configSalao.diasIndisponiveis.push(dia);
+  adicionarDiaIndisponivelNaLista(dia);
+});
+
+function adicionarDiaIndisponivelNaLista(dia){
+  const div=document.createElement('div'); div.textContent=dia;
+  const btn=document.createElement('button'); btn.textContent="Remover";
+  btn.addEventListener('click',()=>{ 
+    configSalao.diasIndisponiveis=configSalao.diasIndisponiveis.filter(d=>d!==dia);
+    div.remove();
+  });
+  div.appendChild(btn);
+  document.getElementById('diasIndisponiveisList').appendChild(div);
+}
+
+// Agendamentos
+async function carregarAgendamentos(){
+  const snap=await getDocs(collection(db,'agendamentos'));
+  agendamentos=[];
+  const listDiv=document.getElementById('agendamentosList'); listDiv.innerHTML='';
+  snap.forEach(doc=>{
+    const a=doc.data();
+    agendamentos.push(a);
+    const div=document.createElement('div'); div.classList.add('agendamentoItem');
+    div.textContent=`${a.data} - ${a.servico} - Cliente: ${a.cliente}`;
+    const btnConfirm=document.createElement('button'); btnConfirm.textContent="Confirmar";
+    btnConfirm.addEventListener('click',()=>{ alert("Agendamento confirmado!"); tocarSom(); });
+    const btnCancelar=document.createElement('button'); btnCancelar.textContent="Cancelar";
+    btnCancelar.addEventListener('click',()=>{ alert("Agendamento cancelado!"); tocarSom(); });
+    div.appendChild(btnConfirm); div.appendChild(btnCancelar);
+    listDiv.appendChild(div);
+  });
+}
+
+// Salvar configuração
 document.getElementById('salvarConfig').addEventListener('click', async ()=>{
-  const horaInicio = document.getElementById('horaInicio').value;
-  const horaFim = document.getElementById('horaFim').value;
-
-  if(!horaInicio || !horaFim){
-    alert("Defina o horário de início e fim do expediente.");
-    return;
-  }
-
-  proprietarioConfig.horaInicio = horaInicio;
-  proprietarioConfig.horaFim = horaFim;
-
-  await setDoc(doc(db,'configuracao','salon'), proprietarioConfig);
-  alert("Configuração salva com sucesso!");
+  configSalao.horaInicio=document.getElementById('horaInicio').value;
+  configSalao.horaFim=document.getElementById('horaFim').value;
+  await setDoc(doc(db,'configuracao','salon'),configSalao);
+  alert("Configuração salva!");
+  tocarSom();
 });
 </script>
 </body>
