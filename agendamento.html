@@ -15,10 +15,12 @@ h1,h2,h3{text-align:center;color:#ff6a00;margin:15px 0;}
 .form-group input, .form-group select{padding:10px;border-radius:8px;border:1px solid #ddd;font-size:16px;}
 .btn{padding:10px 20px;background:#ff6a00;color:#fff;border:none;border-radius:10px;margin:5px;cursor:pointer;}
 .btn:hover{background:#ff8c33;}
-#servicosList div{margin:5px 0;padding:5px;border:1px solid #ddd;border-radius:10px;display:flex;justify-content:space-between;align-items:center;}
-.calendar{margin-top:20px;}
-.blocked{background:#ddd;color:#888;}
+#servicosList div, #diasIndisponiveisList div{margin:5px 0;padding:5px;border:1px solid #ddd;border-radius:10px;display:flex;justify-content:space-between;align-items:center;}
+.calendar{margin-top:20px;display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+.day{padding:10px;border-radius:10px;text-align:center;cursor:pointer;}
+.blocked{background:#ddd;color:#888;cursor:not-allowed;}
 .available{background:#a6f0a6;}
+.selected{background:#ffbc00;color:#fff;}
 </style>
 </head>
 <body>
@@ -73,56 +75,111 @@ h1,h2,h3{text-align:center;color:#ff6a00;margin:15px 0;}
 <script type="module">
 import { auth, db } from './firebase.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 let usuarioAtual;
 let isProprietario = false;
-let configSalão = { servicos: [], diasIndisponiveis: [] };
+let configSalao = { servicos: [], diasIndisponiveis: [] };
+let agendamentos = [];
 
 function tocarSom(){document.getElementById('somNotificacao').play();}
 
+// Função para criar calendário do mês atual
+function gerarCalendario(){
+  const calendarDiv=document.getElementById('calendar');
+  calendarDiv.innerHTML='';
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = hoje.getMonth();
+  const diasNoMes = new Date(ano, mes+1, 0).getDate();
+
+  for(let d=1; d<=diasNoMes; d++){
+    const dataStr=`${ano}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const div=document.createElement('div');
+    div.classList.add('day');
+    div.textContent=d;
+
+    // Verifica dias indisponíveis ou já agendados
+    let bloqueado=false;
+    if(configSalao.diasIndisponiveis.includes(dataStr)) bloqueado=true;
+    if(agendamentos.some(a=>a.data===dataStr)) bloqueado=true;
+
+    if(bloqueado) div.classList.add('blocked'); else div.classList.add('available');
+
+    if(!bloqueado){
+      div.addEventListener('click', ()=>{
+        const servicoEscolhido=prompt("Digite o nome do serviço que deseja agendar:");
+        if(!configSalao.servicos.some(s=>s.nome===servicoEscolhido)){
+          alert("Serviço inválido!");
+          return;
+        }
+        agendarHorario(dataStr, servicoEscolhido);
+      });
+    }
+
+    calendarDiv.appendChild(div);
+  }
+}
+
+// Função de agendamento
+async function agendarHorario(data, servico){
+  const docRef=await addDoc(collection(db,'agendamentos'),{
+    cliente: usuarioAtual.uid,
+    data: data,
+    servico: servico
+  });
+  alert("Agendamento realizado!");
+  tocarSom();
+  agendamentos.push({cliente: usuarioAtual.uid, data: data, servico: servico});
+  gerarCalendario();
+}
+
+// Carrega agendamentos do Firestore
+async function carregarAgendamentos(){
+  const snap=await getDocs(collection(db,'agendamentos'));
+  agendamentos=[];
+  snap.forEach(doc=>agendamentos.push(doc.data()));
+  gerarCalendario();
+}
+
+// Carregar configuração e inicializar
 onAuthStateChanged(auth, async (user)=>{
   if(!user){ window.location.href="index.html"; return; }
-  usuarioAtual = user;
+  usuarioAtual=user;
 
-  const userSnap = await getDoc(doc(db,'usuarios',user.uid));
+  const userSnap=await getDoc(doc(db,'usuarios',user.uid));
   if(!userSnap.exists()){ alert("Usuário não encontrado"); return; }
-  isProprietario = userSnap.data().role==="proprietario";
+  isProprietario=userSnap.data().role==="proprietario";
 
-  // Mostrar bloco correto
-  if(isProprietario){
-    document.getElementById('configProprietario').style.display="block";
-  }
+  if(isProprietario) document.getElementById('configProprietario').style.display="block";
   document.getElementById('calendarContainer').style.display="block";
 
-  // Carregar configuração existente
-  const configRef = doc(db,'configuracao','salon');
-  const configSnap = await getDoc(configRef);
+  const configRef=doc(db,'configuracao','salon');
+  const configSnap=await getDoc(configRef);
   if(configSnap.exists()){
-    configSalão = configSnap.data();
+    configSalao=configSnap.data();
     if(isProprietario){
-      document.getElementById('horaInicio').value=configSalão.horaInicio || "08:00";
-      document.getElementById('horaFim').value=configSalão.horaFim || "18:00";
-      if(configSalão.servicos) configSalão.servicos.forEach(s=>adicionarServicoNaLista(s));
-      if(configSalão.diasIndisponiveis) configSalão.diasIndisponiveis.forEach(d=>adicionarDiaIndisponivelNaLista(d));
+      document.getElementById('horaInicio').value=configSalao.horaInicio || "08:00";
+      document.getElementById('horaFim').value=configSalao.horaFim || "18:00";
+      if(configSalao.servicos) configSalao.servicos.forEach(s=>adicionarServicoNaLista(s));
+      if(configSalao.diasIndisponiveis) configSalao.diasIndisponiveis.forEach(d=>adicionarDiaIndisponivelNaLista(d));
     }
   } else if(isProprietario){
-    configSalão = { proprietario: usuarioAtual.uid, horaInicio:"08:00", horaFim:"18:00", servicos:[], diasIndisponiveis:[] };
-    await setDoc(configRef,configSalão);
+    configSalao={proprietario:usuarioAtual.uid,horaInicio:"08:00",horaFim:"18:00",servicos:[],diasIndisponiveis:[]};
+    await setDoc(configRef,configSalao);
   }
 
-  // Aqui você implementaria calendário interativo
-  document.getElementById('calendar').textContent = "Calendário será implementado aqui. Horários bloqueados e disponíveis aparecerão.";
+  await carregarAgendamentos();
 });
 
-// Funções para adicionar serviços
+// Proprietário adiciona serviços
 document.getElementById('adicionarServico').addEventListener('click', ()=>{
   const nome=document.getElementById('servicoNome').value;
   const duracao=parseInt(document.getElementById('servicoDuracao').value);
   const valor=parseFloat(document.getElementById('servicoValor').value);
   if(!nome||!duracao||!valor){ alert("Preencha todos os campos do serviço!"); return; }
   const servico={nome,duracao,valor};
-  configSalão.servicos.push(servico);
+  configSalao.servicos.push(servico);
   adicionarServicoNaLista(servico);
   document.getElementById('servicoNome').value=""; document.getElementById('servicoDuracao').value=30; document.getElementById('servicoValor').value=50;
 });
@@ -137,7 +194,7 @@ function adicionarServicoNaLista(servico){
 document.getElementById('adicionarDiaIndisponivel').addEventListener('click', ()=>{
   const dia=document.getElementById('diaIndisponivel').value;
   if(!dia){ alert("Selecione um dia!"); return; }
-  configSalão.diasIndisponiveis.push(dia);
+  configSalao.diasIndisponiveis.push(dia);
   adicionarDiaIndisponivelNaLista(dia);
 });
 
@@ -149,9 +206,9 @@ function adicionarDiaIndisponivelNaLista(dia){
 // Salvar configuração
 document.getElementById('salvarConfig').addEventListener('click', async ()=>{
   if(isProprietario){
-    configSalão.horaInicio=document.getElementById('horaInicio').value;
-    configSalão.horaFim=document.getElementById('horaFim').value;
-    await setDoc(doc(db,'configuracao','salon'),configSalão);
+    configSalao.horaInicio=document.getElementById('horaInicio').value;
+    configSalao.horaFim=document.getElementById('horaFim').value;
+    await setDoc(doc(db,'configuracao','salon'),configSalao);
     alert("Configuração salva!");
     tocarSom();
   }
