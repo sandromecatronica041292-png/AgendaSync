@@ -6,256 +6,109 @@
 <title>AgendaSync - Agendamento</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing: border-box; margin:0; padding:0; font-family: 'Inter', sans-serif; }
-  body { background:#f5f5f5; min-height:100vh; }
-  .container { max-width:900px; margin:30px auto; padding:20px; background:#fff; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); }
-  h1 { text-align:center; color:#ff6a00; margin-bottom:20px; }
-  h2 { color:#333; margin-top:20px; margin-bottom:10px; }
-  .form-group { margin-bottom:15px; }
-  .form-group label { display:block; margin-bottom:5px; font-weight:600; }
-  .form-group input, .form-group select { width:100%; padding:10px; border-radius:8px; border:1px solid #ddd; font-size:16px; }
-  .btn { padding:10px 15px; background:#ff6a00; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; transition:0.3s; }
-  .btn:hover { background:#ff8c33; }
-  table { width:100%; border-collapse:collapse; margin-top:20px; }
-  th, td { border:1px solid #ddd; padding:10px; text-align:center; }
-  th { background:#ff6a00; color:#fff; }
-  .indisponivel { color:red; font-weight:600; }
+body { font-family:'Inter', sans-serif; background:#f5f5f5; margin:0; padding:0; }
+.container { max-width:1000px; margin:30px auto; padding:20px; background:#fff; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); }
+h1 { text-align:center; color:#ff6a00; margin-bottom:20px; }
+.calendar { display:grid; grid-template-columns: repeat(7, 1fr); gap:5px; margin-top:20px; }
+.day { padding:10px; background:#eee; border-radius:8px; cursor:pointer; text-align:center; }
+.day.indisponivel { background:#ccc; cursor:not-allowed; color:#999; }
+.day.confirmado { background:#4caf50; color:#fff; }
+.day.pendente { background:#ffeb3b; }
+.day.cancelado { background:#f44336; color:#fff; }
+.legend { display:flex; gap:10px; margin-top:15px; }
+.legend div { padding:5px 10px; border-radius:5px; color:#fff; font-weight:600; }
+.legend .confirmado { background:#4caf50; }
+.legend .pendente { background:#ffeb3b; color:#000; }
+.legend .cancelado { background:#f44336; }
 </style>
 </head>
 <body>
 
 <div class="container">
-  <h1>AgendaSync</h1>
+<h1>AgendaSync - Agendamento</h1>
 
-  <!-- Seção Proprietário: Cadastrar Serviço -->
-  <div id="proprietario-section" style="display:none;">
-    <h2>Cadastro de Serviços</h2>
-    <div class="form-group">
-      <label for="nome-servico">Nome do Serviço</label>
-      <input type="text" id="nome-servico" placeholder="Ex.: Corte de cabelo">
-    </div>
-    <div class="form-group">
-      <label for="valor-servico">Valor (R$)</label>
-      <input type="number" id="valor-servico" placeholder="50">
-    </div>
-    <div class="form-group">
-      <label for="duracao-servico">Duração (min)</label>
-      <input type="number" id="duracao-servico" placeholder="30">
-    </div>
-    <button class="btn" id="btn-cadastrar-servico">Cadastrar Serviço</button>
-
-    <h2>Definir Horários Disponíveis</h2>
-    <div class="form-group">
-      <label for="dia-horario">Data</label>
-      <input type="date" id="dia-horario">
-    </div>
-    <div class="form-group">
-      <label for="hora-horario">Hora</label>
-      <input type="time" id="hora-horario">
-    </div>
-    <button class="btn" id="btn-adicionar-horario">Adicionar Horário</button>
-  </div>
-
-  <!-- Seção Cliente: Agendar -->
-  <div id="cliente-section" style="display:none;">
-    <h2>Agendar Serviço</h2>
-    <div class="form-group">
-      <label for="servico-agendamento">Serviço</label>
-      <select id="servico-agendamento"></select>
-    </div>
-    <div class="form-group">
-      <label for="data-agendamento">Data</label>
-      <input type="date" id="data-agendamento">
-    </div>
-    <div class="form-group">
-      <label for="hora-agendamento">Horário</label>
-      <select id="hora-agendamento"></select>
-    </div>
-    <button class="btn" id="btn-agendar">Agendar</button>
-  </div>
-
-  <!-- Lista de Agendamentos -->
-  <h2>Agendamentos</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Cliente</th>
-        <th>Serviço</th>
-        <th>Data</th>
-        <th>Hora</th>
-        <th>Status</th>
-        <th>Ação</th>
-      </tr>
-    </thead>
-    <tbody id="lista-agendamentos"></tbody>
-  </table>
+<div id="calendar" class="calendar"></div>
+<div class="legend">
+  <div class="confirmado">Confirmado</div>
+  <div class="pendente">Pendente</div>
+  <div class="cancelado">Cancelado</div>
+</div>
 </div>
 
 <script type="module" src="firebase.js"></script>
 <script type="module">
 import { auth, db } from './firebase.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { collection, addDoc, query, where, getDocs, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { collection, getDocs, query, where, addDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// ELEMENTOS
-const proprietarioSection = document.getElementById('proprietario-section');
-const clienteSection = document.getElementById('cliente-section');
-const listaAgendamentos = document.getElementById('lista-agendamentos');
-const servicoAgendamento = document.getElementById('servico-agendamento');
-const horaAgendamento = document.getElementById('hora-agendamento');
-const dataAgendamento = document.getElementById('data-agendamento');
+const calendarEl = document.getElementById('calendar');
+let usuarioAtual;
+const proprietarioEmail = "proprietario@agenda.com"; // ajuste para o e-mail do dono do salão
 
-// Verifica login e tipo de usuário
 onAuthStateChanged(auth, async (user) => {
-  if(!user) { alert('Faça login!'); window.location.href='index.html'; return; }
+  if(!user){ alert('Faça login!'); window.location.href='index.html'; return; }
+  usuarioAtual = user;
+  await renderCalendar();
+});
 
-  const email = user.email;
-  const uid = user.uid;
+async function renderCalendar(){
+  calendarEl.innerHTML='';
+  const hoje = new Date();
+  const dias = 30;
+  for(let i=0;i<dias;i++){
+    const dia = new Date();
+    dia.setDate(hoje.getDate()+i);
+    const diaStr = dia.toISOString().split('T')[0];
+    const div = document.createElement('div');
+    div.classList.add('day');
+    div.dataset.dia = diaStr;
+    div.textContent = diaStr.split('-').reverse().join('/');
 
-  // Propriedade simplificada: email do proprietário
-  const proprietarioEmail = "proprietario@agenda.com"; // Altere para o e-mail do dono do salão
-
-  if(email === proprietarioEmail) {
-    // MOSTRA SEÇÃO DO PROPRIETÁRIO
-    proprietarioSection.style.display = 'block';
-  } else {
-    // MOSTRA SEÇÃO DO CLIENTE
-    clienteSection.style.display = 'block';
+    const q = query(collection(db,'agendamentos'), where('data','==',diaStr));
+    const snapshot = await getDocs(q);
+    let status='';
+    snapshot.forEach(docu => {
+      const data = docu.data();
+      if(usuarioAtual.email === proprietarioEmail || data.userId === usuarioAtual.uid){
+        if(data.status==='confirmado') status='confirmado';
+        else if(data.status==='pendente') status='pendente';
+        else if(data.status==='cancelado') status='cancelado';
+      }
+    });
+    if(status) div.classList.add(status);
+    div.addEventListener('click',()=> agendarOuGerir(diaStr));
+    calendarEl.appendChild(div);
   }
-
-  // LISTAR AGENDAMENTOS
-  await listarAgendamentos(user);
-  // LISTAR SERVIÇOS
-  if(clienteSection.style.display !== 'none') await listarServicos();
-});
-
-// FUNÇÕES
-
-// CADASTRAR SERVIÇO (Proprietário)
-document.getElementById('btn-cadastrar-servico').addEventListener('click', async () => {
-  const nome = document.getElementById('nome-servico').value;
-  const valor = document.getElementById('valor-servico').value;
-  const duracao = document.getElementById('duracao-servico').value;
-
-  if(!nome || !valor || !duracao) return alert('Preencha todos os campos');
-
-  const user = auth.currentUser;
-  await addDoc(collection(db, "servicos"), { nome, valor, duracao, criadoPor: user.uid });
-  alert('Serviço cadastrado!');
-  document.getElementById('nome-servico').value='';
-  document.getElementById('valor-servico').value='';
-  document.getElementById('duracao-servico').value='';
-});
-
-// ADICIONAR HORÁRIO (Proprietário)
-document.getElementById('btn-adicionar-horario').addEventListener('click', async () => {
-  const dia = document.getElementById('dia-horario').value;
-  const hora = document.getElementById('hora-horario').value;
-  if(!dia || !hora) return alert('Preencha data e hora');
-  const user = auth.currentUser;
-  await addDoc(collection(db, "horarios"), { dia, hora, disponivel:true, criadoPor: user.uid });
-  alert('Horário adicionado!');
-  document.getElementById('dia-horario').value='';
-  document.getElementById('hora-horario').value='';
-});
-
-// LISTAR SERVIÇOS (Cliente)
-async function listarServicos() {
-  const q = query(collection(db, "servicos"));
-  const snapshot = await getDocs(q);
-  servicoAgendamento.innerHTML='';
-  snapshot.forEach(docu => {
-    const data = docu.data();
-    const option = document.createElement('option');
-    option.value = docu.id;
-    option.textContent = `${data.nome} - R$${data.valor}`;
-    servicoAgendamento.appendChild(option);
-  });
 }
 
-// ATUALIZAR HORÁRIOS DISPONÍVEIS (Cliente)
-dataAgendamento.addEventListener('change', async () => {
-  const dia = dataAgendamento.value;
-  horaAgendamento.innerHTML='';
-  if(!dia) return;
-  const user = auth.currentUser;
-  // Pegando horários disponíveis
-  const q = query(collection(db,'horarios'), where('dia','==',dia), where('disponivel','==',true));
-  const snapshot = await getDocs(q);
-  snapshot.forEach(docu=>{
-    const data = docu.data();
-    const option = document.createElement('option');
-    option.value = docu.id;
-    option.textContent = data.hora;
-    horaAgendamento.appendChild(option);
-  });
-});
-
-// AGENDAR (Cliente)
-document.getElementById('btn-agendar').addEventListener('click', async () => {
-  const servicoId = servicoAgendamento.value;
-  const dia = dataAgendamento.value;
-  const horarioId = horaAgendamento.value;
-  if(!servicoId || !dia || !horarioId) return alert('Selecione serviço, data e horário');
-
-  const user = auth.currentUser;
-  const servicoDoc = await getDocs(query(collection(db,'servicos')));
-  let nomeServico=''; let valor='';
-  servicoDoc.forEach(docu => { if(docu.id===servicoId){ nomeServico=docu.data().nome; valor=docu.data().valor; } });
-
-  await addDoc(collection(db,'agendamentos'),{
-    nomeCliente: user.email,
-    servico: nomeServico,
-    data: dia,
-    hora: document.getElementById('hora-agendamento').selectedOptions[0].textContent,
-    status:'pendente',
-    userId:user.uid,
-    criadoPor:'proprietario_uid' // ajuste conforme seu proprietário
-  });
-
-  // marcar horário como indisponível
-  const horarioRef = doc(db,'horarios',horarioId);
-  await updateDoc(horarioRef,{ disponivel:false });
-
-  alert('Agendamento realizado!');
-  await listarAgendamentos(user);
-});
-
-// LISTAR AGENDAMENTOS
-async function listarAgendamentos(user){
-  listaAgendamentos.innerHTML='';
-  let q;
-  const email = user.email;
-  const proprietarioEmail = "proprietario@agenda.com";
-  if(email === proprietarioEmail){
-    q = query(collection(db,'agendamentos'));
+async function agendarOuGerir(dia){
+  if(usuarioAtual.email === proprietarioEmail){
+    const servico = prompt('Digite o nome do serviço para este dia:');
+    if(!servico) return;
+    await addDoc(collection(db,'agendamentos'),{
+      nomeCliente:'Cliente Exemplo',
+      servico,
+      data:dia,
+      status:'pendente',
+      userId:'cliente_id_exemplo'
+    });
+    alert('Agendamento cadastrado pelo proprietário!');
+    await renderCalendar();
   } else {
-    q = query(collection(db,'agendamentos'), where('userId','==',user.uid));
+    const servico = prompt('Digite o serviço que deseja agendar:');
+    if(!servico) return;
+    await addDoc(collection(db,'agendamentos'),{
+      nomeCliente:usuarioAtual.email,
+      servico,
+      data:dia,
+      status:'pendente',
+      userId:usuarioAtual.uid
+    });
+    alert('Agendamento realizado!');
+    await renderCalendar();
   }
-  const snapshot = await getDocs(q);
-  snapshot.forEach(docu => {
-    const data = docu.data();
-    const tr = document.createElement('tr');
-    tr.innerHTML=`
-      <td>${data.nomeCliente}</td>
-      <td>${data.servico}</td>
-      <td>${data.data}</td>
-      <td>${data.hora}</td>
-      <td>${data.status}</td>
-      <td>${email===proprietarioEmail? `<button class="btn" onclick="confirmar('${docu.id}')">Confirmar</button>` : '-'}</td>
-    `;
-    listaAgendamentos.appendChild(tr);
-  });
-}
-
-// CONFIRMAR AGENDAMENTO
-window.confirmar = async (id) => {
-  const docRef = doc(db,'agendamentos',id);
-  await updateDoc(docRef,{status:'confirmado'});
-  alert('Agendamento confirmado!');
-  const user = auth.currentUser;
-  await listarAgendamentos(user);
 }
 </script>
+
 </body>
 </html>
