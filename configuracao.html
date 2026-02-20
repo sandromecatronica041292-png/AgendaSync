@@ -6,89 +6,137 @@
 <title>AgendaSync - Configuração do Salão</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-body { font-family:'Inter', sans-serif; background:#f5f5f5; margin:0; padding:0; }
-.container { max-width:600px; margin:40px auto; background:#fff; padding:20px; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); }
-h1 { text-align:center; color:#ff6a00; margin-bottom:20px; }
-label { display:block; margin:10px 0 5px; font-weight:600; }
-input, select { width:100%; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #ccc; font-size:16px; }
-.btn { background:#ff6a00; color:#fff; padding:12px; width:100%; border:none; border-radius:10px; font-size:16px; cursor:pointer; font-weight:600; }
-.btn:hover { background:#ff8c33; }
-.service { border:1px solid #ddd; padding:10px; border-radius:8px; margin-bottom:10px; display:flex; gap:10px; align-items:center; }
-.service input { flex:1; }
-.service button { background:#f44336; padding:5px 10px; }
+  * { box-sizing:border-box; margin:0; padding:0; font-family:'Inter',sans-serif; }
+  body { min-height:100vh; display:flex; flex-direction:column; align-items:center; background:#f4f4f4; padding:20px; }
+  h1,h2 { color:#ff6a00; margin:20px 0; text-align:center; }
+  .form-card { background:#fff; padding:20px; border-radius:15px; box-shadow:0 5px 15px rgba(0,0,0,0.2); margin:10px; width:100%; max-width:500px; }
+  .form-group { margin-bottom:15px; display:flex; flex-direction:column; }
+  .form-group label { margin-bottom:5px; font-weight:600; }
+  .form-group input { padding:10px; border-radius:8px; border:1px solid #ddd; font-size:16px; }
+  .btn { padding:10px 20px; background:#ff6a00; color:#fff; border:none; border-radius:10px; margin:5px; cursor:pointer; }
+  .btn:hover { background:#ff8c33; }
+  #servicosList div { margin:5px 0; padding:5px; border:1px solid #ddd; border-radius:10px; }
 </style>
 </head>
 <body>
 
-<div class="container">
-<h1>Configuração do Salão</h1>
+<h1>AgendaSync</h1>
+<div class="form-card">
+  <h2>Configuração do Salão</h2>
+  <div class="form-group">
+    <label>Horário de Início</label>
+    <input type="time" id="horaInicio">
+  </div>
+  <div class="form-group">
+    <label>Horário de Fim</label>
+    <input type="time" id="horaFim">
+  </div>
 
-<label>Início do Expediente</label>
-<input type="time" id="horaInicio" value="08:00">
+  <h2>Serviços</h2>
+  <div class="form-group">
+    <label>Nome do Serviço</label>
+    <input type="text" id="servicoNome" placeholder="Ex: Corte">
+  </div>
+  <div class="form-group">
+    <label>Duração (minutos)</label>
+    <input type="number" id="servicoDuracao" value="30">
+  </div>
+  <div class="form-group">
+    <label>Valor (R$)</label>
+    <input type="number" id="servicoValor" value="50">
+  </div>
+  <button class="btn" id="adicionarServico">Adicionar Serviço</button>
 
-<label>Fim do Expediente</label>
-<input type="time" id="horaFim" value="17:00">
+  <h3>Serviços Cadastrados</h3>
+  <div id="servicosList"></div>
 
-<h2>Serviços</h2>
-<div id="servicos"></div>
-<button id="addServico" class="btn">Adicionar Serviço</button>
-<button id="salvarConfig" class="btn">Salvar Configuração</button>
+  <button class="btn" id="salvarConfig">Salvar Configuração</button>
 </div>
 
+<script type="module" src="firebase.js"></script>
 <script type="module">
 import { auth, db } from './firebase.js';
-import { collection, addDoc, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 let usuarioAtual;
-onAuthStateChanged(auth,user=>{
-    if(!user){ alert('Faça login!'); window.location.href='index.html'; return; }
-    usuarioAtual = user;
-    carregarConfiguracao();
+let proprietarioConfig = { servicos: [] };
+
+onAuthStateChanged(auth, async (user)=>{
+  if(!user){ window.location.href = "index.html"; return; }
+  usuarioAtual = user;
+
+  // Verifica role
+  const userSnap = await getDoc(doc(db,'usuarios',user.uid));
+  if(!userSnap.exists() || userSnap.data().role !== 'proprietario'){
+    alert("Acesso negado! Apenas proprietário pode acessar.");
+    window.location.href = "index.html";
+    return;
+  }
+
+  // Carrega configuração existente
+  const configRef = doc(db,'configuracao','salon');
+  const configSnap = await getDoc(configRef);
+
+  if(configSnap.exists()){
+    proprietarioConfig = configSnap.data();
+    document.getElementById('horaInicio').value = proprietarioConfig.horaInicio || "08:00";
+    document.getElementById('horaFim').value = proprietarioConfig.horaFim || "18:00";
+    if(proprietarioConfig.servicos){
+      proprietarioConfig.servicos.forEach(s => adicionarServicoNaLista(s));
+    }
+  } else {
+    // Cria configuração mínima
+    proprietarioConfig = {
+      proprietario: usuarioAtual.uid,
+      horaInicio: "08:00",
+      horaFim: "18:00",
+      servicos: []
+    };
+    await setDoc(configRef, proprietarioConfig);
+  }
 });
 
-function criarServicoInput(nome='',duracao=30,valor=''){
-    const div = document.createElement('div');
-    div.classList.add('service');
-    div.innerHTML = `
-        <input type="text" placeholder="Nome do serviço" value="${nome}" class="nomeServico" required>
-        <input type="number" placeholder="Duração (min)" value="${duracao}" class="duracaoServico" min="1" required>
-        <input type="text" placeholder="Valor" value="${valor}" class="valorServico" required>
-        <button type="button">X</button>
-    `;
-    div.querySelector('button').addEventListener('click',()=>div.remove());
-    document.getElementById('servicos').appendChild(div);
-}
+// Adicionar serviço na lista da tela
+document.getElementById('adicionarServico').addEventListener('click', ()=>{
+  const nome = document.getElementById('servicoNome').value;
+  const duracao = parseInt(document.getElementById('servicoDuracao').value);
+  const valor = parseFloat(document.getElementById('servicoValor').value);
 
-document.getElementById('addServico').addEventListener('click',()=>criarServicoInput());
+  if(!nome || !duracao || !valor){ alert("Preencha todos os campos do serviço!"); return; }
 
-document.getElementById('salvarConfig').addEventListener('click',async()=>{
-    const horaInicio = document.getElementById('horaInicio').value;
-    const horaFim = document.getElementById('horaFim').value;
-    const servicosDivs = document.querySelectorAll('.service');
-    const servicos = [];
-    servicosDivs.forEach(div=>{
-        servicos.push({
-            nome: div.querySelector('.nomeServico').value,
-            duracao: parseInt(div.querySelector('.duracaoServico').value),
-            valor: div.querySelector('.valorServico').value
-        });
-    });
-    await setDoc(doc(db,'configuracao','salon'),{
-        proprietario: usuarioAtual.uid,
-        horaInicio,
-        horaFim,
-        servicos
-    });
-    alert('Configuração salva!');
+  const servico = { nome, duracao, valor };
+  proprietarioConfig.servicos.push(servico);
+  adicionarServicoNaLista(servico);
+
+  // Limpar campos
+  document.getElementById('servicoNome').value = "";
+  document.getElementById('servicoDuracao').value = 30;
+  document.getElementById('servicoValor').value = 50;
 });
 
-async function carregarConfiguracao(){
-    const docRef = doc(db,'configuracao','salon');
-    const docSnap = await getDocs(collection(db,'configuracao'));
-    // Você pode carregar aqui se quiser implementar edição futura
+function adicionarServicoNaLista(servico){
+  const div = document.createElement('div');
+  div.textContent = `${servico.nome} - ${servico.duracao} min - R$ ${servico.valor.toFixed(2)}`;
+  document.getElementById('servicosList').appendChild(div);
 }
+
+// Salvar configuração no Firestore
+document.getElementById('salvarConfig').addEventListener('click', async ()=>{
+  const horaInicio = document.getElementById('horaInicio').value;
+  const horaFim = document.getElementById('horaFim').value;
+
+  if(!horaInicio || !horaFim){
+    alert("Defina o horário de início e fim do expediente.");
+    return;
+  }
+
+  proprietarioConfig.horaInicio = horaInicio;
+  proprietarioConfig.horaFim = horaFim;
+
+  await setDoc(doc(db,'configuracao','salon'), proprietarioConfig);
+  alert("Configuração salva com sucesso!");
+});
 </script>
-
 </body>
 </html>
