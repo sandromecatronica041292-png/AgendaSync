@@ -7,15 +7,21 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 body { font-family:'Inter', sans-serif; background:#f5f5f5; margin:0; padding:0; }
-.container { max-width:1000px; margin:30px auto; padding:20px; background:#fff; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); }
-h1 { text-align:center; color:#ff6a00; margin-bottom:20px; }
-.calendar { display:grid; grid-template-columns: repeat(7, 1fr); gap:5px; margin-top:20px; }
-.day { padding:10px; background:#eee; border-radius:8px; cursor:pointer; text-align:center; }
+.container { max-width:1200px; margin:30px auto; padding:20px; background:#fff; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); display:flex; gap:20px; flex-wrap:wrap; }
+h1 { text-align:center; color:#ff6a00; width:100%; margin-bottom:20px; }
+.calendar, .sidebar { background:#f9f9f9; border-radius:12px; padding:15px; }
+.calendar { flex:2 1 600px; display:grid; grid-template-columns: repeat(7, 1fr); gap:5px; }
+.day { padding:10px; background:#eee; border-radius:8px; cursor:pointer; text-align:center; position:relative; }
 .day.indisponivel { background:#ccc; cursor:not-allowed; color:#999; }
 .day.confirmado { background:#4caf50; color:#fff; }
 .day.pendente { background:#ffeb3b; }
 .day.cancelado { background:#f44336; color:#fff; }
-.legend { display:flex; gap:10px; margin-top:15px; }
+.sidebar { flex:1 1 300px; height:max-content; }
+.sidebar h2 { text-align:center; color:#ff6a00; margin-bottom:10px; }
+.slot { padding:8px; margin:5px 0; border-radius:6px; cursor:pointer; background:#eee; transition:0.3s; }
+.slot:hover { background:#ffebcd; }
+.slot.indisponivel { background:#ccc; cursor:not-allowed; color:#999; }
+.legend { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
 .legend div { padding:5px 10px; border-radius:5px; color:#fff; font-weight:600; }
 .legend .confirmado { background:#4caf50; }
 .legend .pendente { background:#ffeb3b; color:#000; }
@@ -27,7 +33,15 @@ h1 { text-align:center; color:#ff6a00; margin-bottom:20px; }
 <div class="container">
 <h1>AgendaSync - Agendamento</h1>
 
-<div id="calendar" class="calendar"></div>
+<div class="calendar" id="calendar"></div>
+
+<div class="sidebar">
+<h2>Horários do Dia</h2>
+<div id="slots"></div>
+
+<h2>Detalhes do Serviço</h2>
+<div id="detalhes">Selecione um horário para ver o serviço</div>
+
 <div class="legend">
   <div class="confirmado">Confirmado</div>
   <div class="pendente">Pendente</div>
@@ -39,17 +53,31 @@ h1 { text-align:center; color:#ff6a00; margin-bottom:20px; }
 <script type="module">
 import { auth, db } from './firebase.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { collection, getDocs, query, where, addDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { collection, getDocs, query, where, addDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-const calendarEl = document.getElementById('calendar');
 let usuarioAtual;
-const proprietarioEmail = "proprietario@agenda.com"; // ajuste para o e-mail do dono do salão
+const calendarEl = document.getElementById('calendar');
+const slotsEl = document.getElementById('slots');
+const detalhesEl = document.getElementById('detalhes');
+
+let proprietarioConfig = null;
 
 onAuthStateChanged(auth, async (user) => {
   if(!user){ alert('Faça login!'); window.location.href='index.html'; return; }
   usuarioAtual = user;
+  await carregarConfiguracao();
   await renderCalendar();
 });
+
+async function carregarConfiguracao(){
+  const docRef = doc(db,'configuracao','salon');
+  const docSnap = await getDoc(docRef);
+  if(docSnap.exists()){
+    proprietarioConfig = docSnap.data();
+  } else {
+    alert('Configuração do salão não encontrada!');
+  }
+}
 
 async function renderCalendar(){
   calendarEl.innerHTML='';
@@ -63,50 +91,86 @@ async function renderCalendar(){
     div.classList.add('day');
     div.dataset.dia = diaStr;
     div.textContent = diaStr.split('-').reverse().join('/');
-
-    const q = query(collection(db,'agendamentos'), where('data','==',diaStr));
-    const snapshot = await getDocs(q);
-    let status='';
-    snapshot.forEach(docu => {
-      const data = docu.data();
-      if(usuarioAtual.email === proprietarioEmail || data.userId === usuarioAtual.uid){
-        if(data.status==='confirmado') status='confirmado';
-        else if(data.status==='pendente') status='pendente';
-        else if(data.status==='cancelado') status='cancelado';
-      }
-    });
-    if(status) div.classList.add(status);
-    div.addEventListener('click',()=> agendarOuGerir(diaStr));
+    div.addEventListener('click',()=> renderSlots(diaStr));
     calendarEl.appendChild(div);
   }
 }
 
-async function agendarOuGerir(dia){
-  if(usuarioAtual.email === proprietarioEmail){
-    const servico = prompt('Digite o nome do serviço para este dia:');
-    if(!servico) return;
-    await addDoc(collection(db,'agendamentos'),{
-      nomeCliente:'Cliente Exemplo',
-      servico,
-      data:dia,
-      status:'pendente',
-      userId:'cliente_id_exemplo'
+async function renderSlots(diaStr){
+  slotsEl.innerHTML='';
+  detalhesEl.innerHTML='Selecione um horário para ver o serviço';
+  if(!proprietarioConfig) return;
+
+  // Horários gerados automaticamente
+  const horaInicio = proprietarioConfig.horaInicio.split(':');
+  const horaFim = proprietarioConfig.horaFim.split(':');
+  let horarios = [];
+  proprietarioConfig.servicos.forEach(servico=>{
+    let hora = parseInt(horaInicio[0]);
+    let minuto = parseInt(horaInicio[1]);
+    const fim = parseInt(horaFim[0]);
+    while(hora < fim){
+      let h = hora.toString().padStart(2,'0');
+      let m = minuto.toString().padStart(2,'0');
+      horarios.push({horario:`${h}:${m}`, servico:servico.nome, duracao:servico.duracao, valor:servico.valor});
+      minuto += servico.duracao;
+      if(minuto>=60){ hora+=Math.floor(minuto/60); minuto = minuto%60; }
+    }
+  });
+
+  const q = query(collection(db,'agendamentos'), where('data','==',diaStr));
+  const snapshot = await getDocs(q);
+  const ocupados = {};
+  snapshot.forEach(docu=>{ ocupados[docu.data().horario]=docu.data(); });
+
+  horarios.forEach(h=>{
+    const div = document.createElement('div');
+    div.classList.add('slot');
+    div.textContent = `${h.horario} - ${h.servico}`;
+
+    if(ocupados[h.horario]){
+      div.classList.add('indisponivel');
+      div.textContent += ` (${ocupados[h.horario].nomeCliente})`;
+    }
+
+    div.addEventListener('click', async ()=>{
+      if(div.classList.contains('indisponivel')) return;
+
+      if(usuarioAtual.uid === proprietarioConfig.proprietario){
+        const cliente = prompt('Nome do cliente:');
+        if(!cliente) return;
+        await addDoc(collection(db,'agendamentos'),{
+          nomeCliente:cliente,
+          servico:h.servico,
+          valor:h.valor,
+          data:diaStr,
+          horario:h.horario,
+          status:'pendente',
+          userId:'cliente_id_exemplo'
+        });
+        alert('Agendamento cadastrado pelo proprietário!');
+      } else {
+        await addDoc(collection(db,'agendamentos'),{
+          nomeCliente:usuarioAtual.email,
+          servico:h.servico,
+          valor:h.valor,
+          data:diaStr,
+          horario:h.horario,
+          status:'pendente',
+          userId:usuarioAtual.uid
+        });
+        alert('Agendamento realizado!');
+      }
+      await renderSlots(diaStr);
     });
-    alert('Agendamento cadastrado pelo proprietário!');
-    await renderCalendar();
-  } else {
-    const servico = prompt('Digite o serviço que deseja agendar:');
-    if(!servico) return;
-    await addDoc(collection(db,'agendamentos'),{
-      nomeCliente:usuarioAtual.email,
-      servico,
-      data:dia,
-      status:'pendente',
-      userId:usuarioAtual.uid
+
+    div.addEventListener('mouseenter', ()=>{
+      if(ocupados[h.horario]) detalhesEl.innerHTML=`Serviço: ${ocupados[h.horario].servico}<br>Cliente: ${ocupados[h.horario].nomeCliente}<br>Status: ${ocupados[h.horario].status}<br>Valor: ${ocupados[h.horario].valor || '-'}`;
+      else detalhesEl.innerHTML=`Serviço: ${h.servico} - Valor: ${h.valor}`;
     });
-    alert('Agendamento realizado!');
-    await renderCalendar();
-  }
+
+    slotsEl.appendChild(div);
+  });
 }
 </script>
 
