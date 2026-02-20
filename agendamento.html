@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgendaSync - Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  body {
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #FFCC33, #333333);
+    min-height: 100vh;
+  }
+
+  header {
+    background: #333;
+    color: #FFCC33;
+    padding: 20px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 20px auto;
+    background: #fff;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+  }
+
+  h2 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 20px;
+  }
+
+  .form-group {
+    margin-bottom: 15px;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 5px;
+  }
+
+  .form-group input, .form-group select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 16px;
+  }
+
+  .btn {
+    padding: 12px;
+    background-color: #FFCC33;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 10px;
+  }
+
+  .btn:hover {
+    background-color: #e6b800;
+  }
+
+  .agenda-list {
+    margin-top: 25px;
+  }
+
+  .agenda-item {
+    background: #f8f8f8;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .agenda-info {
+    flex: 1 1 60%;
+  }
+
+  .agenda-actions button {
+    margin-left: 10px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .confirm-btn { background-color: #4CAF50; color: white; }
+  .cancel-btn { background-color: #f44336; color: white; }
+
+  @media(max-width:480px){
+    .agenda-info { flex: 1 1 100%; margin-bottom: 10px; }
+  }
+
+</style>
+</head>
+<body>
+
+<header>AgendaSync - Dashboard do Salão</header>
+
+<div class="container">
+  <h2>Agendar Serviço</h2>
+  <form id="agenda-form">
+    <div class="form-group">
+      <label for="cliente-nome">Nome do Cliente</label>
+      <input type="text" id="cliente-nome" placeholder="Digite o nome do cliente" required>
+    </div>
+
+    <div class="form-group">
+      <label for="servico">Serviço</label>
+      <select id="servico" required>
+        <option value="">Selecione um serviço</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="data">Data</label>
+      <input type="date" id="data" required>
+    </div>
+
+    <div class="form-group">
+      <label for="hora">Hora</label>
+      <input type="time" id="hora" required>
+    </div>
+
+    <button type="submit" class="btn">Agendar</button>
+  </form>
+
+  <h2>Agendamentos</h2>
+  <div class="agenda-list" id="agenda-list"></div>
+</div>
+
+<script type="module">
+import { db } from './firebase.js';
+import { collection, addDoc, getDocs, updateDoc, doc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// Serviços do salão (pode ser configurado futuramente)
+const servicos = ['Corte', 'Barba', 'Unha', 'Pintura de Cabelo'];
+const servicoSelect = document.getElementById('servico');
+servicos.forEach(s => {
+  const option = document.createElement('option');
+  option.value = s;
+  option.textContent = s;
+  servicoSelect.appendChild(option);
+});
+
+const agendaForm = document.getElementById('agenda-form');
+const agendaList = document.getElementById('agenda-list');
+
+// Salvar agendamento
+agendaForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const nome = document.getElementById('cliente-nome').value;
+  const servico = document.getElementById('servico').value;
+  const data = document.getElementById('data').value;
+  const hora = document.getElementById('hora').value;
+
+  try {
+    await addDoc(collection(db, "agendamentos"), {
+      nome,
+      servico,
+      data,
+      hora,
+      status: "pendente"
+    });
+
+    alert('Agendamento salvo com sucesso!');
+    agendaForm.reset();
+    listarAgendamentos();
+  } catch (error) {
+    alert('Erro ao salvar agendamento: ' + error.message);
+  }
+});
+
+// Listar agendamentos
+async function listarAgendamentos() {
+  agendaList.innerHTML = '';
+  const q = query(collection(db, "agendamentos"), orderBy("data"));
+  const querySnapshot = await getDocs(q);
+
+  querySnapshot.forEach((docItem) => {
+    const data = docItem.data();
+    const div = document.createElement('div');
+    div.className = 'agenda-item';
+    div.innerHTML = `
+      <div class="agenda-info">
+        <strong>${data.nome}</strong> - ${data.servico} <br>
+        ${data.data} ${data.hora} - Status: <strong>${data.status}</strong>
+      </div>
+      <div class="agenda-actions">
+        <button class="confirm-btn">Confirmar</button>
+        <button class="cancel-btn">Cancelar</button>
+      </div>
+    `;
+
+    // Ações do salão
+    div.querySelector('.confirm-btn').addEventListener('click', async () => {
+      await updateDoc(doc(db, "agendamentos", docItem.id), { status: "confirmado" });
+      listarAgendamentos();
+    });
+
+    div.querySelector('.cancel-btn').addEventListener('click', async () => {
+      await updateDoc(doc(db, "agendamentos", docItem.id), { status: "cancelado" });
+      listarAgendamentos();
+    });
+
+    agendaList.appendChild(div);
+  });
+}
+
+// Carrega a lista ao abrir
+listarAgendamentos();
+</script>
+
+</body>
+</html>
