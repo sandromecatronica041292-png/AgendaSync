@@ -188,7 +188,12 @@
     const password = document.getElementById('login-password').value;
 
     signInWithEmailAndPassword(auth, email, password)
-      .then(() => alert('Login realizado com sucesso!'))
+      .then(() => {
+       //Login realizado com sucesso
+       window.location.href =
+        "agendamento.html"; // redireciona para tela de agendamento
+      }
+       alert('Login realizado com sucesso!'))
       .catch(error => alert(error.message));
   });
 
