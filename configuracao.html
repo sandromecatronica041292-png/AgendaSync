@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgendaSync - Configuração do Salão</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+body { font-family:'Inter', sans-serif; background:#f5f5f5; margin:0; padding:0; }
+.container { max-width:600px; margin:40px auto; background:#fff; padding:20px; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); }
+h1 { text-align:center; color:#ff6a00; margin-bottom:20px; }
+label { display:block; margin:10px 0 5px; font-weight:600; }
+input, select { width:100%; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #ccc; font-size:16px; }
+.btn { background:#ff6a00; color:#fff; padding:12px; width:100%; border:none; border-radius:10px; font-size:16px; cursor:pointer; font-weight:600; }
+.btn:hover { background:#ff8c33; }
+.service { border:1px solid #ddd; padding:10px; border-radius:8px; margin-bottom:10px; display:flex; gap:10px; align-items:center; }
+.service input { flex:1; }
+.service button { background:#f44336; padding:5px 10px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+<h1>Configuração do Salão</h1>
+
+<label>Início do Expediente</label>
+<input type="time" id="horaInicio" value="08:00">
+
+<label>Fim do Expediente</label>
+<input type="time" id="horaFim" value="17:00">
+
+<h2>Serviços</h2>
+<div id="servicos"></div>
+<button id="addServico" class="btn">Adicionar Serviço</button>
+<button id="salvarConfig" class="btn">Salvar Configuração</button>
+</div>
+
+<script type="module">
+import { auth, db } from './firebase.js';
+import { collection, addDoc, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+let usuarioAtual;
+onAuthStateChanged(auth,user=>{
+    if(!user){ alert('Faça login!'); window.location.href='index.html'; return; }
+    usuarioAtual = user;
+    carregarConfiguracao();
+});
+
+function criarServicoInput(nome='',duracao=30,valor=''){
+    const div = document.createElement('div');
+    div.classList.add('service');
+    div.innerHTML = `
+        <input type="text" placeholder="Nome do serviço" value="${nome}" class="nomeServico" required>
+        <input type="number" placeholder="Duração (min)" value="${duracao}" class="duracaoServico" min="1" required>
+        <input type="text" placeholder="Valor" value="${valor}" class="valorServico" required>
+        <button type="button">X</button>
+    `;
+    div.querySelector('button').addEventListener('click',()=>div.remove());
+    document.getElementById('servicos').appendChild(div);
+}
+
+document.getElementById('addServico').addEventListener('click',()=>criarServicoInput());
+
+document.getElementById('salvarConfig').addEventListener('click',async()=>{
+    const horaInicio = document.getElementById('horaInicio').value;
+    const horaFim = document.getElementById('horaFim').value;
+    const servicosDivs = document.querySelectorAll('.service');
+    const servicos = [];
+    servicosDivs.forEach(div=>{
+        servicos.push({
+            nome: div.querySelector('.nomeServico').value,
+            duracao: parseInt(div.querySelector('.duracaoServico').value),
+            valor: div.querySelector('.valorServico').value
+        });
+    });
+    await setDoc(doc(db,'configuracao','salon'),{
+        proprietario: usuarioAtual.uid,
+        horaInicio,
+        horaFim,
+        servicos
+    });
+    alert('Configuração salva!');
+});
+
+async function carregarConfiguracao(){
+    const docRef = doc(db,'configuracao','salon');
+    const docSnap = await getDocs(collection(db,'configuracao'));
+    // Você pode carregar aqui se quiser implementar edição futura
+}
+</script>
+
+</body>
+</html>
