@@ -6,7 +6,81 @@
 <title>AgendaSync - Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-/* MESMO CSS PROFISSIONAL QUE TE ENVIEI ANTES */
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+body {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #ffbc00, #ff6a00);
+  animation: gradientBG 10s ease infinite;
+}
+@keyframes gradientBG {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.container {
+  background: #fff;
+  border-radius: 24px;
+  width: 400px;
+  max-width: 90%;
+  padding: 50px;
+  box-shadow: 0 25px 50px rgba(0,0,0,0.2);
+  transform: scale(0.95);
+  animation: fadeInScale 0.5s forwards;
+}
+@keyframes fadeInScale {
+  to { transform: scale(1); opacity: 1; }
+}
+h1 { text-align: center; color: #ff6a00; margin-bottom: 30px; font-size: 32px; letter-spacing: 1px; }
+.form-group { display: flex; flex-direction: column; margin-bottom: 20px; position: relative; }
+.form-group label { margin-bottom: 6px; font-weight: 600; color: #333; }
+.form-group input {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #ddd;
+  font-size: 16px;
+  transition: 0.3s;
+}
+.form-group input:focus {
+  border-color: #ff6a00;
+  outline: none;
+  box-shadow: 0 0 10px rgba(255,106,0,0.4);
+}
+.btn {
+  padding: 14px;
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  background: #ff6a00;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.3s;
+  margin-top: 10px;
+}
+.btn:hover {
+  background: #ff8c33;
+  box-shadow: 0 6px 12px rgba(255,106,0,0.4);
+}
+.toggle-login {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 15px;
+  color: #555;
+  cursor: pointer;
+  transition: 0.3s;
+}
+.toggle-login span { color: #ff6a00; font-weight: 700; text-decoration: underline; }
+.form-card { animation: slideFade 0.5s forwards; }
+@keyframes slideFade { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 480px) {
+  .container { padding: 30px; }
+  h1 { font-size: 26px; }
+  .btn { font-size: 16px; }
+}
 </style>
 </head>
 <body>
@@ -14,7 +88,6 @@
 <div class="container">
   <h1>AgendaSync</h1>
 
-  <!-- Login Form -->
   <form id="login-form" class="form-card">
     <div class="form-group">
       <label for="login-email">Email</label>
@@ -27,7 +100,6 @@
     <button type="submit" class="btn">Entrar</button>
   </form>
 
-  <!-- Signup Form -->
   <form id="signup-form" class="form-card" style="display:none;">
     <div class="form-group">
       <label for="signup-email">Email</label>
@@ -72,9 +144,7 @@ loginForm.addEventListener('submit', (e) => {
   const password = document.getElementById('login-password').value;
 
   signInWithEmailAndPassword(auth, email, password)
-    .then(() => {
-      window.location.href = "agendamento_calendario.html";
-    })
+    .then(() => { window.location.href = "agendamento.html"; })
     .catch(error => alert(error.message));
 });
 
@@ -92,5 +162,6 @@ signupForm.addEventListener('submit', (e) => {
     .catch(error => alert(error.message));
 });
 </script>
+
 </body>
 </html>
